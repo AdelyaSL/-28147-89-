@@ -1,0 +1,125 @@
+import secrets
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import scrolledtext
+
+S = [
+    [0x0, 0x4, 0xE, 0xB, 0x6, 0x1, 0x5, 0xC, 0xD, 0xA, 0x9, 0x8, 0x3, 0x2, 0x7, 0xF],
+    [0x7, 0xC, 0xB, 0x6, 0x5, 0x4, 0x3, 0x2, 0x1, 0x0, 0xF, 0xE, 0xD, 0xA, 0x9, 0x8],
+    [0x3, 0x0, 0x7, 0x2, 0x6, 0x5, 0x1, 0x4, 0xF, 0xC, 0xB, 0xA, 0x9, 0x8, 0xD, 0xE],
+    [0x6, 0x4, 0x0, 0x7, 0x5, 0x1, 0x2, 0x3, 0xF, 0xE, 0x9, 0xA, 0xD, 0xC, 0x8, 0xB],
+    [0x1, 0x5, 0x0, 0x6, 0x3, 0x2, 0x7, 0x4, 0xB, 0xC, 0xD, 0xE, 0xF, 0xA, 0x9, 0x8],
+    [0x1, 0x7, 0x5, 0x0, 0x3, 0x4, 0x6, 0x2, 0xA, 0xB, 0xD, 0xE, 0xF, 0x9, 0x8, 0xC],
+    [0x4, 0x5, 0x0, 0x3, 0x2, 0x1, 0x6, 0x7, 0xF, 0xE, 0xC, 0x9, 0xA, 0xB, 0xD, 0x8],
+    [0x3, 0x5, 0x0, 0x7, 0x1, 0x4, 0x2, 0x6, 0xB, 0xC, 0xD, 0xE, 0xF, 0xA, 0x8, 0x9],
+]
+
+P = [i for i in range(32)]
+
+def generate_key():
+    return int.from_bytes(secrets.token_bytes(32), byteorder='big')
+
+def s_function(n):
+    result = 0
+    for i in range(8):
+        byte = (n >> (i * 4)) & 0xf
+        index = i % len(S)
+        result |= S[index][byte] << (i * 4)
+    return result
+
+def p_function(n):
+    return sum(((n >> i) & 1) << P[i] for i in range(32))
+
+def round_function(block: int, round_key: int):
+    left = (block >> 32) & ((1 << 32) - 1)
+    right = block & ((1 << 32) - 1)
+
+    right_xor_key = right ^ round_key
+    sub = s_function(right_xor_key)
+    per = p_function(sub)
+
+    new_left = right
+    new_right = left ^ per
+
+    return (new_left << 32) | new_right
+
+def encrypt(data: int, key: int):
+    round_keys = [key >> (i * 8) & ((1 << 32) - 1) for i in range(8)]
+    block = data
+
+    for i in range(32):
+        round_key = round_keys[i % len(round_keys)]
+        block = round_function(block, round_key)
+
+    return block
+
+def pad_message(message: str):
+    byte_data = message.encode('utf-8')
+    pad_length = (64 - (len(byte_data) * 8) % 64) // 8
+    padded_data = byte_data + bytes([pad_length] * pad_length)
+    return padded_data
+
+def blockify(data: bytes):
+    return [data[i:i + 8] for i in range(0, len(data), 8)]
+
+def process_blocks(blocks, key):
+    result = []
+    for block in blocks:
+        if len(block) < 8:
+            block = block.ljust(8, b'\0')
+        data = int.from_bytes(block, byteorder='big')
+        encrypted_data = encrypt(data, key)
+        result.append(encrypted_data.to_bytes(8, byteorder='big'))
+    return b''.join(result)
+
+class GOSTApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Шифр ГОСТ 28147-89")
+
+        self.key_label = tk.Label(root, text="Сгенерированный 256-битный ключ:")
+        self.key_label.pack()
+
+        self.key_value = tk.Label(root, text="")
+        self.key_value.pack()
+
+        self.generate_key_button = tk.Button(root, text="Сгенерировать ключ", command=self.generate_key)
+        self.generate_key_button.pack()
+
+        self.input_label = tk.Label(root, text="Введите текст для шифрования:")
+        self.input_label.pack()
+
+        self.input_entry = tk.Entry(root, width=50)
+        self.input_entry.pack()
+
+        self.encrypt_button = tk.Button(root, text="Зашифровать", command=self.encrypt_data)
+        self.encrypt_button.pack()
+
+        self.result_text = scrolledtext.ScrolledText(root, width=60, height=5)
+        self.result_text.pack()
+
+        self.key = None  # Хранение сгенерированного ключа
+
+    def generate_key(self):
+        self.key = generate_key()
+        self.key_value.config(text=f"{self.key:064x}")  # Отображаем ключ в шестнадцатеричном формате
+
+    def encrypt_data(self):
+        if self.key is None:
+            messagebox.showerror("Ошибка", "Сначала сгенерируйте ключ.")
+            return
+
+        input_text = self.input_entry.get()
+        padded_data = pad_message(input_text)
+        blocks = blockify(padded_data)
+
+        encrypted_data = process_blocks(blocks, self.key)
+        encrypted_hex = encrypted_data.hex()  # Преобразование в нижний регистр
+
+        self.result_text.delete(1.0, tk.END)
+        self.result_text.insert(tk.END, f"Зашифрованные данные:\n{encrypted_hex}\n")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = GOSTApp(root)
+    root.mainloop()
