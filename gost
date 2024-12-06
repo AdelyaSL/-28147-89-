@@ -23,7 +23,7 @@ def s_transform(value):
 def encrypt_block(block, key, decrypt=False):
     left = (block >> 32) & 0xFFFFFFFF
     right = block & 0xFFFFFFFF
-    keys = key[::-1] if decrypt else key  # Обратный порядок ключей для расшифровки
+    keys = key[::-1] if decrypt else key 
 
     for round in range(16):
         temp = (right + keys[round % 8]) & 0xFFFFFFFF
