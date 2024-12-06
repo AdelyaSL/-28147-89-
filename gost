@@ -20,12 +20,13 @@ def s_transform(value):
         result |= S[i][(value >> (4 * i)) & 0xF] << (4 * i)
     return result
 
-def encrypt_block(block, key):
+def encrypt_block(block, key, decrypt=False):
     left = (block >> 32) & 0xFFFFFFFF
     right = block & 0xFFFFFFFF
+    keys = key[::-1] if decrypt else key  # Обратный порядок ключей для расшифровки
 
     for round in range(16):
-        temp = (right + (key[round % 8])) & 0xFFFFFFFF
+        temp = (right + keys[round % 8]) & 0xFFFFFFFF
         temp = s_transform(temp)
         temp = ((temp << 11) | (temp >> (32 - 11))) & 0xFFFFFFFF
         temp ^= left
@@ -41,6 +42,11 @@ def text_to_blocks(text):
     blocks = [int.from_bytes(data[i:i + 8], 'big') for i in range(0, len(data), 8)]
     return blocks
 
+def blocks_to_text(blocks):
+    data = b"".join(block.to_bytes(8, 'big') for block in blocks)
+    padding = data[-1]
+    return data[:-padding].decode('utf-8')
+
 def generate_key():
     return os.urandom(32)
 
@@ -48,7 +54,13 @@ def encrypt_message(message, key):
     key_blocks = [int.from_bytes(key[i:i + 4], 'big') for i in range(0, len(key), 4)]
     blocks = text_to_blocks(message)
     encrypted_blocks = [encrypt_block(block, key_blocks) for block in blocks]
-    return " ".join(f"{block:016X}" for block in encrypted_blocks)  
+    return " ".join(f"{block:016x}" for block in encrypted_blocks)  # Маленькие буквы
+
+def decrypt_message(encrypted_message, key):
+    key_blocks = [int.from_bytes(key[i:i + 4], 'big') for i in range(0, len(key), 4)]
+    blocks = [int(block, 16) for block in encrypted_message.split()]
+    decrypted_blocks = [encrypt_block(block, key_blocks, decrypt=True) for block in blocks]
+    return blocks_to_text(decrypted_blocks)
 
 def run_gui():
     def on_generate_key():
@@ -70,8 +82,30 @@ def run_gui():
         text_result.delete("1.0", tk.END)
         text_result.insert(tk.END, encrypted)
 
+    def on_decrypt():
+        encrypted_message = entry_message.get().strip()
+        key_input = entry_key.get()
+        try:
+            key = bytes.fromhex(key_input)
+            if len(key) != 32:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Ошибка", "Ключ должен быть длиной 256 бит (64 символа в шестнадцатеричном формате).")
+            return
+
+        if not encrypted_message:
+            messagebox.showerror("Ошибка", "Поле сообщения пустое. Вставьте зашифрованное сообщение для расшифровки.")
+            return
+
+        try:
+            decrypted = decrypt_message(encrypted_message, key)
+            text_result.delete("1.0", tk.END)
+            text_result.insert(tk.END, decrypted)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось расшифровать сообщение: {e}")
+
     window = tk.Tk()
-    window.title("ГОСТ 28147-89 Шифрование")
+    window.title("ГОСТ 28147-89 Шифрование и Расшифровка")
 
     tk.Label(window, text="Сообщение:").grid(row=0, column=0, sticky=tk.W)
     entry_message = tk.Entry(window, width=40)
@@ -85,9 +119,12 @@ def run_gui():
 
     tk.Button(window, text="Зашифровать", command=on_encrypt).grid(row=3, column=0, columnspan=2)
 
-    tk.Label(window, text="Результат:").grid(row=4, column=0, sticky=tk.W)
+    tk.Button(window, text="Расшифровать", command=on_decrypt).grid(row=4, column=0, columnspan=2)
+
+
+    tk.Label(window, text="Результат:").grid(row=5, column=0, sticky=tk.W)
     text_result = tk.Text(window, height=10, width=50)
-    text_result.grid(row=5, column=0, columnspan=2)
+    text_result.grid(row=6, column=0, columnspan=2)
 
     window.mainloop()
 
