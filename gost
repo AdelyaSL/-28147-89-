@@ -121,7 +121,6 @@ def run_gui():
 
     tk.Button(window, text="Расшифровать", command=on_decrypt).grid(row=4, column=0, columnspan=2)
 
-
     tk.Label(window, text="Результат:").grid(row=5, column=0, sticky=tk.W)
     text_result = tk.Text(window, height=10, width=50)
     text_result.grid(row=6, column=0, columnspan=2)
